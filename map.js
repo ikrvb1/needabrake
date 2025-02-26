@@ -3,17 +3,15 @@ import mapboxgl from 'https://cdn.jsdelivr.net/npm/mapbox-gl@2.15.0/+esm';
 
 console.log("Mapbox GL JS Loaded:", mapboxgl);
 
-// Set your Mapbox access token here
 mapboxgl.accessToken = 'pk.eyJ1IjoiaWtydmIxIiwiYSI6ImNtN2w3dWpzZTA5MHcybnByZTl6NnZrOTIifQ.236I69H5F1YHv7EOUU-lug';
 
-// Initialize the map
 const map = new mapboxgl.Map({
-    container: 'map', // ID of the div where the map will render
-    style: 'mapbox://styles/ikrvb1/cm7l9b1u6004o01ra50qa56jt', // Map style
-    center: [-71.09415, 42.36027], // [longitude, latitude]
-    zoom: 12, // Initial zoom level
-    minZoom: 5, // Minimum allowed zoom
-    maxZoom: 18 // Maximum allowed zoom
+    container: 'map',
+    style: 'mapbox://styles/ikrvb1/cm7l9b1u6004o01ra50qa56jt',
+    center: [-71.09415, 42.36027],
+    zoom: 12, 
+    minZoom: 5,
+    maxZoom: 18
 });
 
 map.on('load', async () => {
@@ -51,7 +49,6 @@ map.on('load', async () => {
 
     const jsonurl = 'https://dsc106.com/labs/lab07/data/bluebikes-stations.json';
     const jsonData = await d3.json(jsonurl);
-
     let stations = jsonData.data.stations;
     console.log('Stations Array:', stations);
 
@@ -63,15 +60,50 @@ map.on('load', async () => {
         return { cx: x, cy: y };
     }
 
+    map.on('move', updatePositions);
+    map.on('zoom', updatePositions);
+    map.on('resize', updatePositions);
+    map.on('moveend', updatePositions);
+
+    const trips = await d3.csv('https://dsc106.com/labs/lab07/data/bluebikes-traffic-2024-03.csv');
+    console.log('Traffic Data:', trips);
+
+    const departures = d3.rollup(
+        trips,
+        v => v.length,
+        d => d.start_station_id
+    );
+
+    console.log('Departures:', departures);
+
+    const arrivals = d3.rollup(
+        trips,
+        v => v.length,
+        d => d.end_station_id
+    );
+
+    console.log('Arrivals:', arrivals);
+
+    stations = stations.map((station) => {
+        let id = station.short_name;
+        station.arrivals = arrivals.get(id) ?? 0;
+        station.departures = departures.get(id) ?? 0;
+        station.totalTraffic = station.arrivals + station.departures;
+        return station;
+    });
+
+    console.log('Updated Stations:', stations);
+
     const circles = svg.selectAll('circle')
-        .data(stations)
-        .enter()
-        .append('circle')
-        .attr('r', 5)
-        .attr('fill', 'steelblue')
-        .attr('stroke', 'white')
-        .attr('stroke-width', 1)
-        .attr('opacity', 0.8);
+    .data(stations)
+    .enter()
+    .append('circle')
+    .attr('r', 5)
+    .each(function(d) {
+        d3.select(this)
+            .append('title')
+            .text(() => `${d.totalTraffic} trips (${d.departures} departures, ${d.arrivals} arrivals)`);
+    });
 
     function updatePositions() {
         circles
@@ -81,10 +113,11 @@ map.on('load', async () => {
 
     updatePositions();
 
-    map.on('move', updatePositions);
-    map.on('zoom', updatePositions);
-    map.on('resize', updatePositions);
-    map.on('moveend', updatePositions);
+    const radiusScale = d3
+        .scaleSqrt()
+        .domain([0, d3.max(stations, (d) => d.totalTraffic)])
+        .range([0, 25]);
+
+    circles.attr('r', d => radiusScale(d.totalTraffic));
+
 });
-
-
